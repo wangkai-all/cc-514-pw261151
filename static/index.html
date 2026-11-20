@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>稀疏时间序列分析</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>稀疏时间序列分析</h1>
+        <p class="brand-sub">缺口识别 · 补全策略 · 原始/补全样本分离评估 · 版本回放</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <label class="field inline">
+        <span>场景</span>
+        <select id="scenario-select" aria-label="演示场景"></select>
+      </label>
+      <button id="load-scenario" class="btn">载入场景</button>
+      <label class="field inline">
+        <span>序列</span>
+        <select id="series-select" aria-label="序列"></select>
+      </label>
+    </div>
+  </header>
+
+  <div id="error-banner" class="banner error" hidden></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <main>
+    <section class="stats-row" id="stats-row" aria-label="序列概览"></section>
+
+    <section class="panel" aria-labelledby="chart-title">
+      <div class="panel-head">
+        <div>
+          <h2 id="chart-title">观测与补全</h2>
+          <p class="panel-sub" id="chart-sub">实心点为原始观测，空心为补全值；阴影为缺口区间。</p>
+        </div>
+        <div class="chart-controls">
+          <div class="seg" role="group" aria-label="Y 轴">
+            <button class="seg-btn active" data-y="value">数值</button>
+            <button class="seg-btn" data-y="error">误差</button>
+          </div>
+          <label class="field inline compact">
+            <span>补全策略</span>
+            <select id="run-select" aria-label="补全策略"></select>
+          </label>
+        </div>
+      </div>
+      <div class="legend" id="chart-legend"></div>
+      <div id="main-chart" class="chart-host"></div>
+      <div class="table-toggle">
+        <button class="link-btn" id="toggle-table" aria-expanded="false">查看表格视图</button>
+      </div>
+      <div id="series-table" class="table-wrap" hidden></div>
+    </section>
+
+    <div class="grid-2">
+      <section class="panel" aria-labelledby="gaps-title">
+        <div class="panel-head">
+          <div>
+            <h2 id="gaps-title">缺测区间</h2>
+            <p class="panel-sub">连续缺失合并为一段；同时给出 UTC 时长与本地日历时长。</p>
+          </div>
+        </div>
+        <div id="gaps-list" class="gap-list"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="tz-title">
+        <div class="panel-head">
+          <div>
+            <h2 id="tz-title">时区边界验证</h2>
+            <p class="panel-sub">采样以 UTC 瞬时为准；本地时间只用于展示。</p>
+          </div>
+          <span class="tz-badge" id="tz-badge"></span>
+        </div>
+        <div id="tz-audit" class="audit-list"></div>
+      </section>
+    </div>
+
+    <section class="panel" aria-labelledby="ingest-title">
+      <div class="panel-head">
+        <div>
+          <h2 id="ingest-title">数据到达 · 增量更新</h2>
+          <p class="panel-sub">补充数据只重算受影响窗口；补全值不会覆盖观测值。</p>
+        </div>
+      </div>
+      <form id="ingest-form" class="ingest-form">
+        <label class="field">
+          <span>目标缺口</span>
+          <select id="ingest-gap" aria-label="目标缺口"></select>
+        </label>
+        <label class="field">
+          <span>填充数量</span>
+          <input id="ingest-count" type="number" min="1" max="500" value="3">
+        </label>
+        <label class="field checkbox">
+          <input id="ingest-noisy" type="checkbox" checked>
+          <span>模拟真实观测（含噪声）</span>
+        </label>
+        <button class="btn primary" type="submit">投递补测数据</button>
+      </form>
+      <div id="ingest-result" class="ingest-result" hidden></div>
+      <div id="batch-list" class="batch-list"></div>
+    </section>
+
+    <div class="grid-2">
+      <section class="panel" aria-labelledby="eval-title">
+        <div class="panel-head">
+          <div>
+            <h2 id="eval-title">评估 · 原始与补全样本分开</h2>
+            <p class="panel-sub" id="eval-sub">原始样本：掩蔽真实观测后补全并计分；补全样本：无真值，只报告分布。</p>
+          </div>
+          <button class="link-btn" id="run-eval">重新评估</button>
+        </div>
+        <div id="eval-summary" class="eval-summary"></div>
+        <div class="legend" id="eval-legend"></div>
+        <div id="eval-chart" class="chart-host small"></div>
+        <div id="eval-table" class="table-wrap compact-table"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="compare-title">
+        <div class="panel-head">
+          <div>
+            <h2 id="compare-title">策略比较</h2>
+            <p class="panel-sub">同一掩蔽集上比较各策略；补全样本给出策略间分歧。</p>
+          </div>
+          <button class="link-btn" id="run-compare">重新比较</button>
+        </div>
+        <div id="compare-chart" class="chart-host small"></div>
+        <div id="compare-table" class="table-wrap compact-table"></div>
+      </section>
+    </div>
+
+    <section class="panel" aria-labelledby="version-title">
+      <div class="panel-head">
+        <div>
+          <h2 id="version-title">版本变化 · 回放</h2>
+          <p class="panel-sub">策略版本升级后各槽位差异；回放按指定时点的已到达数据重算，验证可复现性。</p>
+        </div>
+      </div>
+      <div class="version-controls">
+        <label class="field inline">
+          <span>策略</span>
+          <select id="ver-strategy" aria-label="策略"></select>
+        </label>
+        <label class="field inline">
+          <span>版本 A</span>
+          <select id="ver-a" aria-label="版本 A"></select>
+        </label>
+        <label class="field inline">
+          <span>版本 B</span>
+          <select id="ver-b" aria-label="版本 B"></select>
+        </label>
+        <button class="btn" id="diff-versions">比较版本</button>
+      </div>
+      <div id="version-result"></div>
+      <div class="replay-block">
+        <h3>时点回放</h3>
+        <p class="panel-sub">选择历史时点，用当时的观测重新计算，与当前存储结果逐槽比对。</p>
+        <div class="version-controls">
+          <label class="field inline">
+            <span>Run</span>
+            <select id="replay-run" aria-label="回放 Run"></select>
+          </label>
+          <label class="field inline">
+            <span>时点</span>
+            <select id="replay-asof" aria-label="回放时点"></select>
+          </label>
+          <button class="btn" id="run-replay">执行回放</button>
+        </div>
+        <div id="replay-result"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>数据存储在服务端 SQLite；观测版本表只追加，补全值单独存放。</span>
+    <span id="footer-status"></span>
+  </footer>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
